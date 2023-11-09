@@ -1,0 +1,17 @@
+syntax = "proto3";
+option java_multiple_files = true;
+
+package grupo30;
+
+service Login{
+    rpc login(LoginRequest) returns (LoginReply) {}
+}
+
+message LoginRequest{
+    string name = 1;
+    string pass = 2;
+}
+
+message LoginReply{
+    bool allowed = 1;
+}

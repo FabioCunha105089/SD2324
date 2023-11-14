@@ -7,16 +7,24 @@ import java.util.Scanner;
 public class Client
 {
     //Receber no socket
-    private static BufferedReader in;
+    private static DataInputStream in;
     //Enviar no socket
-    private static PrintWriter out;
+    private static DataOutputStream out;
     //Ler do teclado
     private static BufferedReader sysIn;
+    private static String RESULT_PATH;
     public static void main(String[] args)
     {
+        if(args.length != 2)
+        {
+            System.out.println("É necessário o caminho para a pasta onde serão guardados os ficheiros");
+            System.exit(0);
+        }
+        fixResultPath(args[1]);
+        System.out.print(RESULT_PATH);
         try (Socket socket = new Socket("localhost", 9090)){
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out = new PrintWriter(socket.getOutputStream());
+            in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             sysIn = new BufferedReader(new InputStreamReader(System.in));
             login();
             System.out.println("Bem-vindo");
@@ -25,7 +33,8 @@ public class Client
                 System.out.println("""
                         Escolha uma opção:
                         1- Enviar tarefa
-                        2- Sair""");
+                        2- Verificar estado
+                        0- Sair""");
                 String input = sysIn.readLine();
                 if(!isDigit(input))
                 {
@@ -36,13 +45,16 @@ public class Client
                 switch (choice)
                 {
                     case 1:
-                        sendTask();
+                        receiveTask(sendTask());
                         break;
                     case 2:
+                        status();
+                    case 0:
                         disconnect(socket);
                         exit = true;
                         break;
                     default:
+                        System.out.println("Insira um valor válido.");
                         break;
                 }
             }
@@ -50,6 +62,13 @@ public class Client
         catch (Exception e) {
             System.out.println("Exception na conexão: " + e);
         }
+    }
+
+    private static void fixResultPath(String path)
+    {
+        RESULT_PATH = path;
+        if(RESULT_PATH.charAt(RESULT_PATH.length() - 1) != '/')
+            RESULT_PATH = RESULT_PATH.concat("/");
     }
 
     private static void login() throws IOException
@@ -62,9 +81,10 @@ public class Client
             String pass = sysIn.readLine();
 
             //Envia nome e pass como nome;pass
-            out.println(name.concat(";").concat(pass));
+            out.writeUTF(Message_Types.LOGIN.typeToString());
+            out.writeUTF(name.concat(";").concat(pass));
             out.flush();
-            if(in.readLine().equals("no"))
+            if(in.readUTF().equals("no"))
             {
                 System.out.println("Credenciais erradas, tente denovo.");
                 continue;
@@ -89,9 +109,10 @@ public class Client
         socket.shutdownOutput();
         socket.shutdownInput();
         socket.close();
+        System.out.println("Disconectado.");
     }
 
-    private static void sendTask() throws IOException
+    private static String sendTask() throws IOException
     {
         String mem;
         while(true) {
@@ -101,28 +122,57 @@ public class Client
                 break;
             System.out.println("Insira um valor válido.");
         }
-        System.out.println("Insira o caminho para o ficheiro com a tarefa:");
-        String path = sysIn.readLine();
-        String[] tasks = null;
+        String task;
+        String path;
+        while(true) {
+            System.out.println("Insira o caminho para o ficheiro com a tarefa:");
+            path = sysIn.readLine();
+            try {
+                File file = new File(path);
+                Scanner scanner = new Scanner(file);
+                task = scanner.nextLine();
+                break;
+            } catch (Exception e) {
+                System.out.println("Exception a ler ficheiro: " + e);
+            }
+        }
+        out.writeUTF(Message_Types.TASK_REQUEST.typeToString());
+        out.writeUTF(path);
+        out.writeInt(Integer.parseInt(mem));
+        out.write(task.getBytes());
+        out.flush();
+        System.out.println("Enviado ficheiro " + path);
+        return path;
+    }
+
+    private static void receiveTask(String path)
+    {
+        path = path.concat("_Result");
         try{
-            File file = new File(path);
-            Scanner scanner = new Scanner(file);
-            //Estrutura do ficheiro: Nº de tasks na primeira linha, tasks nas linhas seguintes REVER
-            int nTasks = scanner.nextInt();
-            tasks = new String[nTasks];
-            for (int i = 0; i < nTasks; i++) {
-                tasks[i] = scanner.nextLine();
+            File file = new File(RESULT_PATH.concat(path));
+            if(file.createNewFile())
+            {
+                try(FileOutputStream writer = new FileOutputStream(file, false))
+                {
+                    writer.write(in.readAllBytes());
+                }
+            }
+            else
+            {
+                throw new Exception("Não foi possível criar ficheiro.");
             }
         }
         catch (Exception e)
         {
-            System.out.println("Exception a ler ficheiro: " + e);
+            System.out.println("Erro a guardar resultados: " + e);
         }
-        //Primeiro envia a quantidade de memória que vai precisar, depois as tasks REVER
-        out.println(mem);
-        for (String task: tasks) {
-            out.println(task);
-        }
-        out.flush();
+    }
+
+    private static void status() throws IOException
+    {
+        out.writeUTF(Message_Types.STATUS.typeToString());
+        int mem = in.readInt();
+        int nQueue = in.readInt();
+        System.out.println("Memória disponível: " + mem + "\nTarefas pendentes: " + nQueue);
     }
 }

@@ -1,4 +1,4 @@
-package grupo30;
+package src;
 
 import java.io.*;
 import java.net.Socket;
@@ -81,7 +81,7 @@ public class Client
             String pass = sysIn.readLine();
 
             //Envia nome e pass como nome;pass
-            out.writeUTF(Message_Types.LOGIN.typeToString());
+            out.writeUTF(MessageTypes.LOGIN.typeToString());
             out.writeUTF(name.concat(";").concat(pass));
             out.flush();
             if(in.readUTF().equals("no"))
@@ -136,7 +136,7 @@ public class Client
                 System.out.println("Exception a ler ficheiro: " + e);
             }
         }
-        out.writeUTF(Message_Types.TASK_REQUEST.typeToString());
+        out.writeUTF(MessageTypes.TASK_REQUEST.typeToString());
         out.writeUTF(path);
         out.writeInt(Integer.parseInt(mem));
         out.write(task.getBytes());
@@ -170,7 +170,7 @@ public class Client
 
     private static void status() throws IOException
     {
-        out.writeUTF(Message_Types.STATUS.typeToString());
+        out.writeUTF(MessageTypes.STATUS.typeToString());
         int mem = in.readInt();
         int nQueue = in.readInt();
         System.out.println("Memória disponível: " + mem + "\nTarefas pendentes: " + nQueue);

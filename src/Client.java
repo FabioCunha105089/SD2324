@@ -15,12 +15,12 @@ public class Client
     private static String RESULT_PATH;
     public static void main(String[] args)
     {
-        if(args.length != 2)
+        if(args.length != 1)
         {
-            System.out.println("É necessário o caminho para a pasta onde serão guardados os ficheiros");
+            System.out.println("É necessário o caminho para a pasta onde serão guardados os ficheiros.");
             System.exit(0);
         }
-        fixResultPath(args[1]);
+        fixResultPath(args[0]);
         System.out.print(RESULT_PATH);
         try (Socket socket = new Socket("localhost", 9090)){
             in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));

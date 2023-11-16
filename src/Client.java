@@ -45,22 +45,47 @@ public class Client
                 switch (choice)
                 {
                     case 1:
-                        receiveTask(sendTask());
+                        String mem = readMemory();
+                        File file = readFile();
+                        String task = getTaskFromFile(file);
+
+                        new Thread(() -> {
+                            try {
+                                sendTask(mem, task);
+                                receiveTask(file.getPath());
+                            }
+                            catch (Exception e)
+                            {
+                                System.out.println("Erro a enviar task: " + e);
+                            }
+                        }).start();
                         break;
+
                     case 2:
-                        status();
+                        new Thread(() -> {
+                            try {
+                                status();
+                            } catch (Exception e)
+                            {
+                                System.out.println("Erro a pedir status: " + e);
+                            }
+                        }).start();
+                        break;
+
                     case 0:
                         disconnect(socket);
                         exit = true;
                         break;
+
                     default:
                         System.out.println("Insira um valor válido.");
                         break;
                 }
             }
         }
-        catch (Exception e) {
-            System.out.println("Exception na conexão: " + e);
+        catch (IOException e)
+        {
+            System.out.println("Erro de IO: " + e);
         }
     }
 
@@ -112,37 +137,12 @@ public class Client
         System.out.println("Disconectado.");
     }
 
-    private static String sendTask() throws IOException
+    private static void sendTask(String mem, String task) throws IOException
     {
-        String mem;
-        while(true) {
-            System.out.println("Quanta memória vai precisar?:");
-            mem = sysIn.readLine();
-            if (isDigit(mem))
-                break;
-            System.out.println("Insira um valor válido.");
-        }
-        String task;
-        String path;
-        while(true) {
-            System.out.println("Insira o caminho para o ficheiro com a tarefa:");
-            path = sysIn.readLine();
-            try {
-                File file = new File(path);
-                Scanner scanner = new Scanner(file);
-                task = scanner.nextLine();
-                break;
-            } catch (Exception e) {
-                System.out.println("Exception a ler ficheiro: " + e);
-            }
-        }
         out.writeUTF(MessageTypes.TASK_REQUEST.typeToString());
-        out.writeUTF(path);
         out.writeInt(Integer.parseInt(mem));
         out.write(task.getBytes());
         out.flush();
-        System.out.println("Enviado ficheiro " + path);
-        return path;
     }
 
     private static void receiveTask(String path)
@@ -174,5 +174,41 @@ public class Client
         int mem = in.readInt();
         int nQueue = in.readInt();
         System.out.println("Memória disponível: " + mem + "\nTarefas pendentes: " + nQueue);
+    }
+
+    private static String readMemory() throws IOException
+    {
+        String mem;
+        while(true) {
+            System.out.println("Quanta memória vai precisar?:");
+            mem = sysIn.readLine();
+            if (isDigit(mem))
+                break;
+            System.out.println("Insira um valor válido.");
+        }
+        return mem;
+    }
+
+    private static File readFile() throws IOException
+    {
+        String path;
+        File file;
+        while(true) {
+            System.out.println("Insira o caminho para o ficheiro com a tarefa:");
+            path = sysIn.readLine();
+            try {
+                file = new File(path);
+                break;
+            } catch (Exception e) {
+                System.out.println("Exception a ler ficheiro: " + e);
+            }
+        }
+        return file;
+    }
+
+    private static String getTaskFromFile(File file) throws FileNotFoundException
+    {
+        Scanner scanner = new Scanner(file);
+        return scanner.nextLine();
     }
 }

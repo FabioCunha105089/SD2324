@@ -7,7 +7,8 @@ public enum MessageTypes {
     NEW_TASK,
     TASK_SUCCESSFUL,
     TASK_FAILED,
-    NEW_WORKER;
+    NEW_WORKER,
+    REGISTER;
 
     public String typeToString()
     {
@@ -19,6 +20,7 @@ public enum MessageTypes {
             case TASK_SUCCESSFUL -> "5";
             case TASK_FAILED -> "6";
             case NEW_WORKER -> "7";
+            case REGISTER -> "8";
         };
     }
 
@@ -33,6 +35,7 @@ public enum MessageTypes {
             case "5" -> TASK_SUCCESSFUL;
             case "6" -> TASK_FAILED;
             case "7" -> NEW_WORKER;
+            case "8" -> REGISTER;
             default -> null;
         };
     }

@@ -24,7 +24,7 @@ public enum MessageTypes {
         };
     }
 
-    public MessageTypes stringToType(String type)
+    public static MessageTypes stringToType(String type)
     {
         return switch(type)
         {

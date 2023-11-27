@@ -1,14 +1,18 @@
 package src;
 
 import java.io.*;
+import java.net.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 public class Server {
     private static final int PORT = 9090;
+
+    private static final ReentrantLock socketLock = new ReentrantLock();
     private static final Map<String, String> users = new HashMap<>();
 
     public static void main(String[] args) {
@@ -30,6 +34,19 @@ public class Server {
                         case REGISTER:
                             handleRegister(in, out);
                             break;
+
+                        case TASK_REQUEST:
+                            InetAddress clientAddress = clientSocket.getInetAddress();
+                            int clientPort = clientSocket.getPort();
+                            var cliente = clientAddress + ":" + clientPort;
+                            Task task = Task.deserialize(in,MessageTypes.TASK_REQUEST);
+
+                            processJob job = new processJob(cliente, task.getTask(), out, socketLock);
+                            Thread thread = new Thread(job);
+                            thread.start();
+                            break;
+
+
 
                         default:
                             System.out.println("Mensagem desconhecida recebida: " + messageType);

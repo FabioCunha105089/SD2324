@@ -44,12 +44,11 @@ public class Task {
         }
     }
 
-    public static Task deserialize(DataInputStream in, MessageTypes type)
-    {
-        if(type == MessageTypes.TASK_SUCCESSFUL)
-            return deserialize_success(in);
-        else
+    public static Task deserialize(DataInputStream in, MessageTypes type) {
+        if (type == MessageTypes.TASK_FAILED)
             return deserialize_failure(in);
+        else
+            return deserialize_success(in);
     }
 
     private static Task deserialize_success(DataInputStream in)
@@ -100,6 +99,10 @@ public class Task {
         } catch (Exception e) {
             System.out.println("Erro a guardar resultados: " + e);
         }
+    }
+
+    public byte[] getTask(){
+        return this.task;
     }
 
     public void printError()

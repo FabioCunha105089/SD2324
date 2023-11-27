@@ -22,7 +22,11 @@ public class Server {
             while (true) {
                 try (Socket clientSocket = serverSocket.accept();
                      DataInputStream in = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
-                     DataOutputStream out = new DataOutputStream(new BufferedOutputStream(clientSocket.getOutputStream()))) {
+                     DataOutputStream out = new DataOutputStream(new BufferedOutputStream(clientSocket.getOutputStream()));
+                     DataInputStream inS = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
+                     DataOutputStream outS = new DataOutputStream(new BufferedOutputStream(clientSocket.getOutputStream()))
+
+                ) {
 
                     String messageType = in.readUTF();
 
@@ -41,12 +45,19 @@ public class Server {
                             var cliente = clientAddress + ":" + clientPort;
                             Task task = Task.deserialize(in,MessageTypes.TASK_REQUEST);
 
-                            processJob job = new processJob(cliente, task.getTask(), out, socketLock);
+                            processJob job = new processJob(cliente, task.getTask(), outS, socketLock);
                             Thread thread = new Thread(job);
                             thread.start();
+                            var message = inS.readUTF();
+                            if (MessageTypes.valueOf(message) == MessageTypes.TASK_SUCCESSFUL){
+                                out.writeUTF(inS.readUTF()); // cliente
+                                out.write(inS.read()); // output
+                            }
+                            else if (MessageTypes.valueOf(message) == MessageTypes.TASK_FAILED){
+                                out.writeInt(inS.readInt()); // error code
+                                out.writeUTF(inS.readUTF()); // error message
+                            }
                             break;
-
-
 
                         default:
                             System.out.println("Mensagem desconhecida recebida: " + messageType);

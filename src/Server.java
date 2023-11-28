@@ -11,8 +11,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class Server {
     private static final int PORT = 9090;
-
-    private static final ReentrantLock socketLock = new ReentrantLock();
     private static final Map<String, String> users = new HashMap<>();
 
     public static void main(String[] args) {
@@ -44,10 +42,9 @@ public class Server {
                             int clientPort = clientSocket.getPort();
                             var cliente = clientAddress + ":" + clientPort;
                             Task task = Task.deserialize(in,MessageTypes.TASK_REQUEST);
+                            outS.writeUTF(cliente);
+                            outS.write(task.getTask());
 
-                            processJob job = new processJob(cliente, task.getTask(), outS, socketLock);
-                            Thread thread = new Thread(job);
-                            thread.start();
                             var message = inS.readUTF();
                             if (MessageTypes.valueOf(message) == MessageTypes.TASK_SUCCESSFUL){
                                 out.writeUTF(inS.readUTF()); // cliente

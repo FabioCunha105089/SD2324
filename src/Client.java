@@ -24,7 +24,7 @@ public class Client {
             in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             sysIn = new BufferedReader(new InputStreamReader(System.in));
-            login();
+            startProgram();
             createListeningThread();
             System.out.println("Bem-vindo");
             boolean exit = false;
@@ -66,29 +66,58 @@ public class Client {
         }
     }
 
-    private static void fixResultPath(String path) {
-        RESULT_PATH = path;
-        if (RESULT_PATH.charAt(RESULT_PATH.length() - 1) != '/')
-            RESULT_PATH = RESULT_PATH.concat("/");
+    private static void startProgram() throws IOException
+    {
+        while(true)
+        {
+            System.out.println("""
+                        Escolha uma opção:
+                        1- Registar
+                        2- Login
+                        0- Sair""");
+            String input = sysIn.readLine();
+            if (!isDigit(input)) {
+                System.out.println("Insira um valor válido.");
+                continue;
+            }
+            switch (Integer.parseInt(input))
+            {
+                case 1:
+                    sendCredentials(MessageTypes.REGISTER, "Registro falhou. Usuário já existe.");
+                    break;
+                case 2:
+                    sendCredentials(MessageTypes.LOGIN, "Credenciais erradas, tente denovo.");
+                    break;
+                case 3:
+                    System.exit(0);
+            }
+        }
     }
 
-    private static void login() throws IOException {
+    private static void sendCredentials(MessageTypes type, String errorMsg) throws IOException
+    {
         while (true) {
             System.out.println("Insira nome: ");
             String name = sysIn.readLine();
             System.out.println("Insira password: ");
             String pass = sysIn.readLine();
 
-            //Envia nome e pass como nome;pass
-            out.writeUTF(MessageTypes.LOGIN.typeToString());
-            out.writeUTF(name.concat(";").concat(pass));
+            out.writeUTF(type.typeToString());
+            out.writeUTF(name);
+            out.writeUTF(pass);
             out.flush();
-            if (in.readUTF().equals("no")) {
-                System.out.println("Credenciais erradas, tente denovo.");
+            if (in.readUTF().equals(errorMsg)) {
+                System.out.println(errorMsg);
                 continue;
             }
             break;
         }
+    }
+
+    private static void fixResultPath(String path) {
+        RESULT_PATH = path;
+        if (RESULT_PATH.charAt(RESULT_PATH.length() - 1) != '/')
+            RESULT_PATH = RESULT_PATH.concat("/");
     }
 
     private static boolean isDigit(String input) {

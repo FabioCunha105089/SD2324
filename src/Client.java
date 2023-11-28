@@ -68,7 +68,8 @@ public class Client {
 
     private static void startProgram() throws IOException
     {
-        while(true)
+        boolean exit = false;
+        while(!exit)
         {
             System.out.println("""
                         Escolha uma opção:
@@ -84,9 +85,11 @@ public class Client {
             {
                 case 1:
                     sendCredentials(MessageTypes.REGISTER, "Registro falhou. Usuário já existe.");
+                    exit = true;
                     break;
                 case 2:
                     sendCredentials(MessageTypes.LOGIN, "Credenciais erradas, tente denovo.");
+                    exit = true;
                     break;
                 case 3:
                     System.exit(0);

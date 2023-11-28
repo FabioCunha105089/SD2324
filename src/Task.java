@@ -104,6 +104,10 @@ public class Task {
     public byte[] getTask(){
         return this.task;
     }
+    public int getMem(){
+        return this.mem;
+    }
+
 
     public void printError()
     {

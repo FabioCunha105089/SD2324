@@ -12,6 +12,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public class Server {
     private static final int PORT = 9090;
     private static final Map<String, String> users = new HashMap<>();
+    private static final Map<String, Integer> workers = new HashMap<>();
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
@@ -21,8 +22,9 @@ public class Server {
                 try (Socket clientSocket = serverSocket.accept();
                      DataInputStream in = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
                      DataOutputStream out = new DataOutputStream(new BufferedOutputStream(clientSocket.getOutputStream()));
-                     DataInputStream inS = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
-                     DataOutputStream outS = new DataOutputStream(new BufferedOutputStream(clientSocket.getOutputStream()))
+                     Socket workerSocket = serverSocket.accept();
+                     DataInputStream inS = new DataInputStream(new BufferedInputStream(workerSocket.getInputStream()));
+                     DataOutputStream outS = new DataOutputStream(new BufferedOutputStream(workerSocket.getOutputStream()))
 
                 ) {
 
@@ -36,6 +38,25 @@ public class Server {
                         case REGISTER:
                             handleRegister(in, out);
                             break;
+                        case STATUS:
+                            Status status = Status.deserialize(in);
+                            //sendStatus(out);
+
+                            break;
+
+                        case NEW_WORKER:
+                            var workerIP = workerSocket.getInetAddress();
+                            var workerPort = workerSocket.getPort();
+                            var worker = workerIP + ":" + workerPort;
+
+                            var memory = inS.readInt();
+                            if (!workers.containsKey(worker)) {
+                                workers.put(worker, memory);
+                            }
+                            else {
+                                System.out.println("Erro ao inserir");
+                            }
+                            break;
 
                         case TASK_REQUEST:
                             InetAddress clientAddress = clientSocket.getInetAddress();
@@ -43,6 +64,7 @@ public class Server {
                             var cliente = clientAddress + ":" + clientPort;
                             Task task = Task.deserialize(in,MessageTypes.TASK_REQUEST);
                             outS.writeUTF(cliente);
+                            outS.writeInt(task.getMem());
                             outS.write(task.getTask());
 
                             var message = inS.readUTF();
@@ -108,4 +130,9 @@ public class Server {
         }
         return false;
     }
+
+    /*private static void sendStatus(DataOutputStream out) throws IOException {
+        Status status = new Status(availableMemory, taskQueueSize);
+        status.serialize(out);
+    }*/
 }

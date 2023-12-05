@@ -12,6 +12,7 @@ public class Client {
     //Ler do teclado
     private static BufferedReader sysIn;
     private static String RESULT_PATH;
+    private static boolean hasDisconnected = false;
 
     public static void main(String[] args) {
         if (args.length != 1) {
@@ -24,49 +25,14 @@ public class Client {
             in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             sysIn = new BufferedReader(new InputStreamReader(System.in));
-            startProgram();
             createListeningThread();
-            System.out.println("Bem-vindo");
-            boolean exit = false;
-            while (!exit) {
-                System.out.println("""
-                        Escolha uma opção:
-                        1- Enviar tarefa
-                        2- Verificar estado
-                        0- Sair""");
-                String input = sysIn.readLine();
-                if (!isDigit(input)) {
-                    System.out.println("Insira um valor válido.");
-                    continue;
-                }
-                int choice = Integer.parseInt(input);
-                switch (choice) {
-                    case 1:
-                        String mem = readMemory();
-                        File file = readFile();
-                        String task = getTaskFromFile(file);
-                        sendTask(mem, task, file.getPath());
-                        break;
-                    case 2:
-                        askStatus();
-                        break;
-
-                    case 0:
-                        disconnect(socket);
-                        exit = true;
-                        break;
-
-                    default:
-                        System.out.println("Insira um valor válido.");
-                        break;
-                }
-            }
+            startProgram(socket);
         } catch (IOException e) {
             System.out.println("Erro de IO: " + e);
         }
     }
 
-    private static void startProgram() throws IOException
+    private static void startProgram(Socket socket) throws IOException
     {
         boolean exit = false;
         while(!exit)
@@ -75,6 +41,8 @@ public class Client {
                         Escolha uma opção:
                         1- Registar
                         2- Login
+                        3- Realizar tarefa
+                        4- Pedir status
                         0- Sair""");
             String input = sysIn.readLine();
             if (!isDigit(input)) {
@@ -85,14 +53,24 @@ public class Client {
             {
                 case 1:
                     sendCredentials(MessageTypes.REGISTER, "Registro falhou. Usuário já existe.");
-                    exit = true;
                     break;
                 case 2:
                     sendCredentials(MessageTypes.LOGIN, "Credenciais erradas, tente denovo.");
-                    exit = true;
                     break;
                 case 3:
-                    System.exit(0);
+                    String mem = readMemory();
+                    File file = readFile();
+                    String task = getTaskFromFile(file);
+                    sendTask(mem, task, file.getPath());
+                    break;
+                case 4:
+                    askStatus();
+                    break;
+                case 0:
+                    hasDisconnected = true;
+                    disconnect(socket);
+                    exit = true;
+                    break;
             }
         }
     }
@@ -140,7 +118,7 @@ public class Client {
         System.out.println("Disconectado.");
     }
 
-    private static void sendTask(String mem, String task, String path) throws IOException {
+    private static void sendTask(String mem, String task, String path){
         new Task(path, Integer.parseInt(mem), task.getBytes()).serialize(out);
     }
 
@@ -189,7 +167,7 @@ public class Client {
     {
         new Thread(() ->
         {
-            while(true)
+            while(true )
             {
                 try{
                     String message = in.readUTF();
@@ -211,6 +189,8 @@ public class Client {
                 }
                 catch(IOException e)
                 {
+                    if(hasDisconnected)
+                        System.exit(0);
                     System.out.println("Erro a ler mensagem do servidor: " + e);
                 }
             }

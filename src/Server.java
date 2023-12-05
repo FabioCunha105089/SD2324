@@ -7,6 +7,8 @@ import java.net.Socket;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 
@@ -14,12 +16,53 @@ public class Server {
     private static final int PORT = 9090;
     private static final Map<String, String> users = new HashMap<>();
     private static final Map<String, WorkerInfo> workers = new HashMap<>();
+    private static ReentrantLock queueLock = new ReentrantLock();
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             System.out.println("Servidor pronto para conexões na porta " + PORT);
-            acceptClients(serverSocket);
-            acceptWorkers(serverSocket);
+            while (true) {
+                Socket connectedSocket = serverSocket.accept();
+                new Thread(() -> {
+                    try {
+                        DataInputStream in = new DataInputStream(new BufferedInputStream(connectedSocket.getInputStream()));
+                        DataOutputStream out = new DataOutputStream(new BufferedOutputStream(connectedSocket.getOutputStream()));
+                        String messageType = in.readUTF();
+                        switch (MessageTypes.valueOf(messageType)) {
+                            case LOGIN:
+                                handleLogin(in, out);
+                                break;
+                            case REGISTER:
+                                handleRegister(in, out);
+                                break;
+                            case STATUS:
+                                int tMemory = 0;
+                                int tQueue = 0;
+                                for (WorkerInfo info :
+                                        workers.values()) {
+                                    tMemory += info.getMemory();
+                                    tQueue += info.getQueue().size();
+                                }
+                                new Status(tMemory, tQueue).serialize(out);
+                                break;
+                            case TASK_REQUEST:
+                                InetAddress clientAddress = connectedSocket.getInetAddress();
+                                int clientPort = connectedSocket.getPort();
+                                var cliente = clientAddress + ":" + clientPort;
+                                Task task = Task.deserialize(in, MessageTypes.TASK_REQUEST);
+                                // TODO: escolher um worker e enviar a task. Colocar Task na queue dela no dicionário
+                                // workers. Dentro desse dicionário tem também uma Condition, usar signal() para
+                                // acordar o worker. Utilizar queueLock antes de adicionar à queue
+                                break;
+                            case NEW_WORKER:
+                                workerProcedure(connectedSocket, in, out);
+                                break;
+                        }
+                    } catch (IOException e) {
+                        System.out.println("Erro a comunicar com cliente: " + e);
+                    }
+                }).start();
+            }
         } catch (IOException e) {
             System.err.println("Erro ao iniciar o servidor: " + e.getMessage());
         }
@@ -65,99 +108,54 @@ public class Server {
         return false;
     }
 
-    private static void acceptClients(ServerSocket serverSocket)
+    private static void workerProcedure(Socket connectedSocket, DataInputStream in, DataOutputStream out)
     {
         new Thread(() -> {
+            int memory = 0;
+            String worker = "";
+            ReentrantLock lock = new ReentrantLock();
+            Condition cond = lock.newCondition();
+            Queue<Task> queue = new ArrayDeque<>();
+            try {
+                var workerIP = connectedSocket.getInetAddress();
+                var workerPort = connectedSocket.getPort();
+                worker = workerIP + ":" + workerPort;
+                memory = in.readInt();
+            } catch (IOException e) {
+                System.out.println("Erro a ler memória do worker: " + e);
+            }
+            if (!workers.containsKey(worker)) {
+                workers.put(worker, new WorkerInfo(memory, connectedSocket, queue, cond));
+            } else {
+                System.out.println("Erro ao inserir");
+            }
             while (true) {
-                Socket clientSocket;
-                try {
-                    clientSocket = serverSocket.accept();
-                } catch (IOException e) {
-                    System.out.println("Erro a conectar a cliente: " + e);
-                    continue;
-                }
-                new Thread(() -> {
+                while (queue.isEmpty()) {
                     try {
-                        DataInputStream in = new DataInputStream(new BufferedInputStream(clientSocket.getInputStream()));
-                        DataOutputStream out = new DataOutputStream(new BufferedOutputStream(clientSocket.getOutputStream()));
-                        String messageType = in.readUTF();
-                        switch (MessageTypes.valueOf(messageType)) {
-                            case LOGIN:
-                                handleLogin(in, out);
-                                break;
-
-                            case REGISTER:
-                                handleRegister(in, out);
-                                break;
-                            case STATUS:
-                                int tMemory = 0;
-                                int tQueue = 0;
-                                for (WorkerInfo info:
-                                        workers.values()) {
-                                    tMemory += info.getMemory();
-                                    tQueue += info.getQueue().size();
-                                }
-                                new Status(tMemory, tQueue).serialize(out);
-                                break;
-                            case TASK_REQUEST:
-                                InetAddress clientAddress = clientSocket.getInetAddress();
-                                int clientPort = clientSocket.getPort();
-                                var cliente = clientAddress + ":" + clientPort;
-                                Task task = Task.deserialize(in, MessageTypes.TASK_REQUEST);
-                                // TODO: escolher um worker e enviar a task
-                                        /*
-                                        outS.writeUTF(cliente);
-                                        outS.writeInt(task.getMem());
-                                        outS.write(task.getTask());
-
-                                        var message = inS.readUTF();
-                                        if (MessageTypes.valueOf(message) == MessageTypes.TASK_SUCCESSFUL) {
-                                            out.writeUTF(inS.readUTF()); // cliente
-                                            out.write(inS.read()); // output
-                                        } else if (MessageTypes.valueOf(message) == MessageTypes.TASK_FAILED) {
-                                            out.writeInt(inS.readInt()); // error code
-                                            out.writeUTF(inS.readUTF()); // error message
-                                        }
-                                         */
-                                break;
-                        }
-                    } catch (IOException e) {
-                        System.out.println("Erro a comunicar com cliente: " + e);
+                        cond.await();
+                    } catch (InterruptedException e) {
+                        System.out.println("Erro enquanto espera por task para worker: " + e);
                     }
-                }).start();
+                }
+                try {
+                    out.writeUTF("NÃO SEI O QUE ELE MANDA AQUI");
+                    byte[] task;
+                    queueLock.lock();
+                    task = queue.element().getTask();
+                    queueLock.unlock();
+                    out.write(task);
+                    String message = in.readUTF();
+                    if (MessageTypes.stringToType(message) == MessageTypes.TASK_SUCCESSFUL) {
+                        String client = in.readUTF();
+                        byte[] result = in.readAllBytes();
+                        // TODO: Enviar resposta ao cliente
+                    } else {
+                        // TODO: Enviar erro ao cliente
+                    }
+                } catch (IOException e) {
+                    System.out.println("Erro a enviar task a worker: " + e);
+                }
             }
         }).start();
-    }
-
-    private static void acceptWorkers(ServerSocket serverSocket)
-    {
-        while (true) {
-            try {
-                Socket workerSocket = serverSocket.accept();
-                DataInputStream inS = new DataInputStream(new BufferedInputStream(workerSocket.getInputStream()));
-                DataOutputStream outS = new DataOutputStream(new BufferedOutputStream(workerSocket.getOutputStream()));
-
-                new Thread(() -> {
-                    int memory = 0;
-                    String worker = "";
-                    try {
-                        String newWorker = inS.readUTF();
-                        var workerIP = workerSocket.getInetAddress();
-                        var workerPort = workerSocket.getPort();
-                        worker = workerIP + ":" + workerPort;
-                        memory = inS.readInt();
-                    } catch (IOException e) {
-                        System.out.println("Erro a ler memória do worker: " + e);
-                    }
-                    if (!workers.containsKey(worker)) {
-                        workers.put(worker, new WorkerInfo(memory, workerSocket, new ArrayDeque<>()));
-                    } else {
-                        System.out.println("Erro ao inserir");
-                    }
-                }).start();
-            } catch (IOException e) {
-                System.err.println("Erro ao lidar com a conexão do cliente: " + e.getMessage());
-            }
-        }
     }
 }

@@ -13,6 +13,7 @@ public class Client {
     private static BufferedReader sysIn;
     private static String RESULT_PATH;
     private static boolean hasDisconnected = false;
+    private static boolean isLoggedIn = false;
 
     public static void main(String[] args) {
         if (args.length != 1) {
@@ -58,6 +59,10 @@ public class Client {
                     sendCredentials(MessageTypes.LOGIN, "Credenciais erradas, tente denovo.");
                     break;
                 case 3:
+                    if (!isLoggedIn) {
+                        System.out.println("Necessita de fazer login para realizar uma tarefa");
+                        continue;
+                    }
                     String mem = readMemory();
                     File file = readFile();
                     String task = getTaskFromFile(file);
@@ -77,7 +82,7 @@ public class Client {
 
     private static void sendCredentials(MessageTypes type, String errorMsg) throws IOException
     {
-        while (true) {
+        while (!isLoggedIn) {
             System.out.println("Insira nome: ");
             String name = sysIn.readLine();
             System.out.println("Insira password: ");
@@ -91,7 +96,7 @@ public class Client {
                 System.out.println(errorMsg);
                 continue;
             }
-            break;
+            isLoggedIn = true;
         }
     }
 

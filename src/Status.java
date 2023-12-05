@@ -5,10 +5,10 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 
 public class Status {
-    private int mem;
-    private int nQueue;
+    private final int mem;
+    private final int nQueue;
 
-    private Status(int mem, int nQueue)
+    public Status(int mem, int nQueue)
     {
         this.mem = mem;
         this.nQueue = nQueue;

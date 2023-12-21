@@ -198,7 +198,7 @@ public class Server {
     }
 
     private static Status getServerStatus() {
-        List<String> workersInfo = new ArrayList<>(); // Initialize the workersInfo list
+        List<String> workersInfo = new ArrayList<>();
         int i = 1;
         taskQueueLock.lock();
         int queueSize = taskQueue.size();

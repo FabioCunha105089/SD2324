@@ -8,148 +8,143 @@ import java.util.Scanner;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class Client {
+public abstract class ClientLib {
     private static DataInputStream in;
     private static DataOutputStream out;
-    private static Menu menuHandler;
     private static String RESULT_PATH;
-    private static boolean isLoggedIn = false;
+    private static Socket socket;
     private static final ReentrantLock socketLock = new ReentrantLock();
     private static boolean exit = false;
     private static Status serverStatus = null;
     private static final ReentrantLock serverStatusLock = new ReentrantLock();
     private static final Condition updateStatus = serverStatusLock.newCondition();
 
-
-    public static void main(String[] args) {
-        if (args.length != 1) {
-            System.out.println("É necessário o caminho para a pasta onde serão guardados os ficheiros.");
-            System.exit(0);
-        }
-        fixResultPath(args[0]);
-
-        menuHandler = new Menu();
-
-        try (Socket socket = new Socket("localhost", 9090)) {
+    private ClientLib() {
+    }
+    public static void connectToServer() {
+        try {
+            socket = new Socket("localhost", 9090);
             in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             out.writeUTF(MessageTypes.NEW_CLIENT.typeToString());
             out.flush();
-            if (validateUser(socket))
-                startProgram();
-            disconnect(socket);
         } catch (IOException e) {
-            System.err.println("Erro de IO: " + e);
+            throw new RuntimeException(e);
         }
     }
 
-    private static boolean validateUser(Socket socket) throws IOException {
-        while (!isLoggedIn) {
-            menuHandler.displayInitialMenu();
-            int choice = menuHandler.getUserChoice();
-            if (choice == 0) {
-                disconnect(socket);
-                return false;
-            }
-            String[] credentials = menuHandler.getUserCredentials();
-            MessageTypes type = MessageTypes.REGISTER;
+    public static boolean validateUser(int choice, String[] credentials) {
+        MessageTypes type = MessageTypes.REGISTER;
+        String msg = "Registo";
 
-            if (choice == 2)
-                type = MessageTypes.LOGIN;
-
-            boolean success = sendCredentials(type, credentials);
-
-            if (success) {
-                isLoggedIn = true;
-                createListeningThread();
-            }
+        if (choice == 2) {
+            type = MessageTypes.LOGIN;
+            msg = "Login";
         }
-        return true;
+
+        boolean success = sendCredentials(type, credentials);
+
+        if (success) {
+            System.out.println(msg + " efetuado com sucesso");
+            createListeningThread();
+            return true;
+        }
+
+        return false;
     }
 
-    private static void startProgram() throws IOException
+    public static boolean startProgram(int choice, String filePath)
     {
-        while(!exit)
+        if (exit) {
+            System.err.println("Servidor crashou");
+            return true;
+        }
+        switch (choice)
         {
-            menuHandler.displayMainMenu();
-            int choice = menuHandler.getUserChoice();
-
-            if (exit) {
-                System.err.println("Servidor crashou");
+            case 1:
+                try {
+                    List<String[]> taskInfo = parseTaskInfo(filePath);
+                    sendTask(taskInfo);
+                } catch (FileNotFoundException e) {
+                    System.out.println("ERRO: " + e);
+                }
                 break;
-            }
-
-            switch (choice)
-            {
-                case 1:
-                    String filePath = menuHandler.getFilePath();
+            case 2:
+                askStatus();
+                serverStatusLock.lock();
+                if (serverStatus == null) {
                     try {
-                        List<String[]> taskInfo = parseTaskInfo(filePath);
-                        sendTask(taskInfo);
-                    } catch (FileNotFoundException e) {
-                        System.out.println("ERRO: " + e);
+                        updateStatus.await();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
                     }
-                    break;
-                case 2:
-                    askStatus();
-                    serverStatusLock.lock();
-                    if (serverStatus == null) {
-                        try {
-                            updateStatus.await();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                    menuHandler.printStatus(serverStatus);
-                    serverStatus = null;
-                    serverStatusLock.unlock();
-                    break;
-                case 0:
-                    exit = true;
-                    break;
-            }
+                }
+                printStatus(serverStatus);
+                serverStatus = null;
+                serverStatusLock.unlock();
+                break;
+            case 0:
+                exit = true;
+                break;
+            default:
+                break;
+        }
+        return exit;
+    }
+
+    private static void printStatus(Status status) {
+        System.out.println("Tarefas na fila de espera: " + status.getQueueSize());
+        if (status.getWorkersInfo() != null) {
+            for (String info : status.getWorkersInfo())
+                System.out.println(info);
         }
     }
 
-    private static boolean sendCredentials(MessageTypes type, String[] credentials) throws IOException
+    private static boolean sendCredentials(MessageTypes type, String[] credentials)
     {
         String name = credentials[0];
         String pass = credentials[1];
+        try {
+            socketLock.lock();
+            out.writeUTF(type.typeToString());
+            out.writeUTF(name);
+            out.writeUTF(pass);
+            out.flush();
+            socketLock.unlock();
 
-        socketLock.lock();
-        out.writeUTF(type.typeToString());
-        out.writeUTF(name);
-        out.writeUTF(pass);
-        out.flush();
-        socketLock.unlock();
-
-        if (!in.readUTF().equals("0")) {
-            switch (type) {
-                case MessageTypes.REGISTER -> {
-                    System.out.println("Registo falhou. Username já existe.");
-                    return false;
-                }
-                case MessageTypes.LOGIN -> {
-                    System.out.println("Login falhou. Credenciais erradas.");
-                    return false;
+            if (!in.readUTF().equals("0")) {
+                switch (type) {
+                    case MessageTypes.REGISTER -> {
+                        System.out.println("Registo falhou. Username já existe.");
+                        return false;
+                    }
+                    case MessageTypes.LOGIN -> {
+                        System.out.println("Login falhou. Credenciais erradas.");
+                        return false;
+                    }
                 }
             }
+            return true;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
-        return true;
     }
 
-    private static void fixResultPath(String path) {
+    public static void fixResultPath(String path) {
         RESULT_PATH = path;
         if (RESULT_PATH.charAt(RESULT_PATH.length() - 1) != '/')
             RESULT_PATH = RESULT_PATH.concat("/");
     }
 
-
-    private static void disconnect(Socket socket) throws IOException {
-        socket.shutdownOutput();
-        socket.shutdownInput();
-        socket.close();
-        System.out.println("Desconectado.");
+    public static void disconnect(){
+        try {
+            socket.shutdownOutput();
+            socket.shutdownInput();
+            socket.close();
+            System.out.println("Desconectado.");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private static void sendTask(List<String[]> taskInfo) {

@@ -2,10 +2,10 @@ package src;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-public class Menu {
+public class Menus {
     private final BufferedReader sysIn;
 
-    public Menu() {
+    public Menus() {
         this.sysIn = new BufferedReader(new InputStreamReader(System.in));
     }
 
@@ -25,23 +25,31 @@ public class Menu {
                 0- Sair""");
     }
 
-    public String getFilePath() throws IOException {
+    public String getFilePath() {
         System.out.println("Insira o caminho do ficheiro: ");
-        return sysIn.readLine();
+        try {
+            return sysIn.readLine();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    public String[] getUserCredentials() throws IOException {
-        System.out.println("Insira nome: ");
-        String name = sysIn.readLine();
-        System.out.println("Insira password: ");
-        String pass = sysIn.readLine();
-        return new String[]{name, pass};
+    public String[] getUserCredentials(){
+        try {
+            System.out.println("Insira nome: ");
+            String name = sysIn.readLine();
+            System.out.println("Insira password: ");
+            String pass = sysIn.readLine();
+            return new String[]{name, pass};
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public int getUserChoice() {
         int choice = -1;
         while (choice < 0 || choice > 2) {
-            String input = null;
+            String input;
             try {
                 input = sysIn.readLine();
             } catch (IOException e) {
@@ -63,17 +71,18 @@ public class Menu {
         return true;
     }
 
-    public void printStatus(Status status) {
-        System.out.println("Tarefas na fila de espera: " + status.getQueueSize());
-        if (status.getWorkersInfo() != null) {
-            for (String info : status.getWorkersInfo())
-                System.out.println(info);
-        }
-        System.out.println("\nPressionar Enter para voltar ao menu principal...");
+    public void waitForEnter() {
         try {
+            System.out.print("\nPressionar Enter para continuar...");
             sysIn.readLine();
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public void clearTerminal() {
+        for (int i = 0; i < 50; ++i) {
+            System.out.println();
         }
     }
 }

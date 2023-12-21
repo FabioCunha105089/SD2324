@@ -3,45 +3,115 @@ package src;
 import java.io.*;
 
 public class Task {
-    private String taskName; //Nome da task, que é o nome do ficheiro de onde vem
+    private final String taskId; //Nome da task, que é o nome do ficheiro de onde vem
+    private String client;
     private int mem; //Memória que vai usar
     private byte[] task; //A task mesmo
     private int errorCode;
     private String errorMessage;
 
-    public Task(String taskName, int mem, byte[] task)
+    public Task(String taskId, int mem, byte[] task)
     {
         this.task = task;
         this.mem = mem;
-        this.taskName = taskName;
+        this.taskId = taskId;
     }
 
-    private Task(String taskName, byte[] task)
+    public Task(String client, String taskId, int mem, byte[] task)
+    {
+        this.client = client;
+        this.task = task;
+        this.mem = mem;
+        this.taskId = taskId;
+    }
+
+    private Task(String taskId, byte[] task)
     {
         this.task = task;
-        this.taskName = taskName;
+        this.taskId = taskId;
     }
 
-    private Task(String errorMessage, int errorCode)
+    private Task(String taskId, String errorMessage, int errorCode)
     {
+        this.taskId = taskId;
         this.errorMessage = errorMessage;
         this.errorCode = errorCode;
     }
 
-    public void serialize(DataOutputStream out)
-    {
-        try{
-            out.writeUTF(MessageTypes.TASK_REQUEST.typeToString());
-            out.writeInt(this.mem);
-            out.writeUTF(this.taskName);
-            out.writeInt(this.task.length);
-            out.write(this.task);
-            out.flush();
-        }
-        catch (IOException e)
-        {
-            System.out.println("Erro a serializar task: " + e);
-        }
+    public Task(String client, String taskId, byte[] task) {
+        this.client = client;
+        this.taskId = taskId;
+        this.task = task;
+    }
+
+    public Task(String client, String taskId, String errorMsg, int errorCode) {
+        this.client = client;
+        this.taskId = taskId;
+        this.errorMessage = errorMsg;
+        this.errorCode = errorCode;
+    }
+
+    public void serialize(DataOutputStream out) throws IOException {
+        out.writeUTF(MessageTypes.TASK_REQUEST.typeToString());
+        out.writeInt(this.mem);
+        out.writeUTF(this.taskId);
+        out.writeInt(this.task.length);
+        out.write(this.task);
+        out.flush();
+    }
+
+    public void serializeToWorker(DataOutputStream out) throws IOException {
+        out.writeUTF(this.client);
+        out.writeUTF(this.taskId);
+        out.writeInt(this.task.length);
+        out.write(this.task);
+        out.flush();
+    }
+
+    public void serializeToClient(DataOutputStream out, MessageTypes type) throws IOException {
+        if (type == MessageTypes.TASK_FAILED)
+            serialize_failure(out, type);
+        else
+            serialize_success(out, type);
+    }
+
+    private void serialize_failure(DataOutputStream out, MessageTypes type) throws IOException {
+        out.writeUTF(type.typeToString());
+        out.writeUTF(this.taskId);
+        out.writeInt(this.errorCode);
+        out.writeUTF(this.errorMessage);
+        out.flush();
+    }
+
+    private void serialize_success(DataOutputStream out, MessageTypes type) throws IOException {
+        out.writeUTF(type.typeToString());
+        out.writeUTF(this.taskId);
+        out.writeInt(this.task.length);
+        out.write(this.task);
+        out.flush();
+    }
+
+    public static Task deserializeFromServer(DataInputStream in, MessageTypes type) throws IOException {
+        if (type == MessageTypes.TASK_FAILED)
+            return deserializeFromServerFailure(in);
+        else
+            return deserializeFromServerSuccess(in);
+    }
+
+    private static Task deserializeFromServerFailure(DataInputStream in) throws IOException {
+        String taskId = in.readUTF();
+        int errorCode = in.readInt();
+        String errorMessage = in.readUTF();
+
+        return new Task(taskId, errorMessage, errorCode);
+    }
+
+    private static Task deserializeFromServerSuccess(DataInputStream in) throws IOException {
+        String taskId = in.readUTF();
+        int taskLength = in.readInt();
+        byte[] task = in.readNBytes(taskLength);
+
+        return new Task(taskId, task);
     }
 
     public static Task deserialize(DataInputStream in, MessageTypes type) {
@@ -51,13 +121,18 @@ public class Task {
             return deserialize_success(in);
     }
 
-    private static Task deserialize_success(DataInputStream in)
-    {
-        String taskName = "";
+    public static Task deserialize(DataInputStream in, String client) {
+        return deserialize_request(in, client);
+    }
+
+    private static Task deserialize_request(DataInputStream in, String client) {
+        String taskId = "";
         byte[] task = null;
+        int mem = 0;
         try
         {
-            taskName = in.readUTF();
+            mem = in.readInt();
+            taskId = in.readUTF();
             int taskSize = in.readInt();
             task = in.readNBytes(taskSize);
         }
@@ -65,15 +140,39 @@ public class Task {
         {
             System.out.println("Erro a ler resposta de task: " + e);
         }
-        return new Task(taskName, task);
+        return new Task(client, taskId, mem, task);
+    }
+
+    private static Task deserialize_success(DataInputStream in)
+    {
+        String client = "";
+        String taskId = "";
+        byte[] task = null;
+
+        try
+        {
+            client = in.readUTF();
+            taskId = in.readUTF();
+            int taskLength = in.readInt();
+            task = in.readNBytes(taskLength);
+        }
+        catch(IOException e)
+        {
+            System.out.println("Erro a ler resposta de task: " + e);
+        }
+        return new Task(client, taskId, task);
     }
 
     private static Task deserialize_failure(DataInputStream in)
     {
         String errorMsg = "";
+        String client = "";
+        String taskId = "";
         int errorCode = 0;
         try
         {
+            client = in.readUTF();
+            taskId = in.readUTF();
             errorCode = in.readInt();
             errorMsg = in.readUTF();
         }
@@ -81,36 +180,33 @@ public class Task {
         {
             System.out.println("Erro a ler resposta de task: " + e);
         }
-        return new Task(errorMsg, errorCode);
+        return new Task(client, taskId, errorMsg, errorCode);
     }
 
-    public void writeResultToFile(String resultPath)
+    public void writeResultToFile(String resultPath, MessageTypes type)
     {
         try {
-            String path = this.taskName.concat("_Result");
+            String path = this.taskId.concat("_Result.gz");
             File file = new File(resultPath.concat(path));
-            if (file.createNewFile()) {
                 try (FileOutputStream writer = new FileOutputStream(file, false)) {
-                    writer.write(this.task);
+                    if (type.equals(MessageTypes.TASK_SUCCESSFUL)) {
+                        writer.write(this.task);
+                    }else {
+                        writer.write(("Error code: " + this.errorCode + "\nError message: " + this.errorMessage).getBytes());
+                    }
                 }
-            } else {
-                throw new Exception("Não foi possível criar ficheiro.");
-            }
         } catch (Exception e) {
-            System.out.println("Erro a guardar resultados: " + e);
+            System.err.println("Erro a guardar resultados: " + e);
         }
     }
 
-    public byte[] getTask(){
-        return this.task;
-    }
     public int getMem(){
         return this.mem;
     }
-
-
-    public void printError()
-    {
-        System.out.println("Erro" + this.errorCode + " a executar task: " + this.errorMessage);
+    public String getTaskId() {
+        return this.taskId;
+    }
+    public String getClient() {
+        return this.client;
     }
 }

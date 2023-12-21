@@ -2,18 +2,24 @@ package src;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Client {
-    //Receber no socket
     private static DataInputStream in;
-    //Enviar no socket
     private static DataOutputStream out;
-    //Ler do teclado
-    private static BufferedReader sysIn;
+    private static Menu menuHandler;
     private static String RESULT_PATH;
-    private static boolean hasDisconnected = false;
     private static boolean isLoggedIn = false;
+    private static final ReentrantLock socketLock = new ReentrantLock();
+    private static boolean exit = false;
+    private static Status serverStatus = null;
+    private static final ReentrantLock serverStatusLock = new ReentrantLock();
+    private static final Condition updateStatus = serverStatusLock.newCondition();
+
 
     public static void main(String[] args) {
         if (args.length != 1) {
@@ -21,83 +27,115 @@ public class Client {
             System.exit(0);
         }
         fixResultPath(args[0]);
-        System.out.print(RESULT_PATH);
+
+        menuHandler = new Menu();
+
         try (Socket socket = new Socket("localhost", 9090)) {
             in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-            sysIn = new BufferedReader(new InputStreamReader(System.in));
-            createListeningThread();
-            startProgram(socket);
+            out.writeUTF(MessageTypes.NEW_CLIENT.typeToString());
+            out.flush();
+            if (validateUser(socket))
+                startProgram();
+            disconnect(socket);
         } catch (IOException e) {
-            System.out.println("Erro de IO: " + e);
+            System.err.println("Erro de IO: " + e);
         }
     }
 
-    private static void startProgram(Socket socket) throws IOException
+    private static boolean validateUser(Socket socket) throws IOException {
+        while (!isLoggedIn) {
+            menuHandler.displayInitialMenu();
+            int choice = menuHandler.getUserChoice();
+            if (choice == 0) {
+                disconnect(socket);
+                return false;
+            }
+            String[] credentials = menuHandler.getUserCredentials();
+            MessageTypes type = MessageTypes.REGISTER;
+
+            if (choice == 2)
+                type = MessageTypes.LOGIN;
+
+            boolean success = sendCredentials(type, credentials);
+
+            if (success) {
+                isLoggedIn = true;
+                createListeningThread();
+            }
+        }
+        return true;
+    }
+
+    private static void startProgram() throws IOException
     {
-        boolean exit = false;
         while(!exit)
         {
-            System.out.println("""
-                        Escolha uma opção:
-                        1- Registar
-                        2- Login
-                        3- Realizar tarefa
-                        4- Pedir status
-                        0- Sair""");
-            String input = sysIn.readLine();
-            if (!isDigit(input)) {
-                System.out.println("Insira um valor válido.");
-                continue;
+            menuHandler.displayMainMenu();
+            int choice = menuHandler.getUserChoice();
+
+            if (exit) {
+                System.err.println("Servidor crashou");
+                break;
             }
-            switch (Integer.parseInt(input))
+
+            switch (choice)
             {
                 case 1:
-                    sendCredentials(MessageTypes.REGISTER, "Registro falhou. Usuário já existe.");
+                    String filePath = menuHandler.getFilePath();
+                    try {
+                        List<String[]> taskInfo = parseTaskInfo(filePath);
+                        sendTask(taskInfo);
+                    } catch (FileNotFoundException e) {
+                        System.out.println("ERRO: " + e);
+                    }
                     break;
                 case 2:
-                    sendCredentials(MessageTypes.LOGIN, "Credenciais erradas, tente denovo.");
-                    break;
-                case 3:
-                    if (!isLoggedIn) {
-                        System.out.println("Necessita de fazer login para realizar uma tarefa");
-                        continue;
-                    }
-                    String mem = readMemory();
-                    File file = readFile();
-                    String task = getTaskFromFile(file);
-                    sendTask(mem, task, file.getPath());
-                    break;
-                case 4:
                     askStatus();
+                    serverStatusLock.lock();
+                    if (serverStatus == null) {
+                        try {
+                            updateStatus.await();
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                    menuHandler.printStatus(serverStatus);
+                    serverStatus = null;
+                    serverStatusLock.unlock();
                     break;
                 case 0:
-                    hasDisconnected = true;
-                    disconnect(socket);
                     exit = true;
                     break;
             }
         }
     }
 
-    private static void sendCredentials(MessageTypes type, String errorMsg) throws IOException
+    private static boolean sendCredentials(MessageTypes type, String[] credentials) throws IOException
     {
-        while (!isLoggedIn) {
-            System.out.println("Insira nome: ");
-            String name = sysIn.readLine();
-            System.out.println("Insira password: ");
-            String pass = sysIn.readLine();
+        String name = credentials[0];
+        String pass = credentials[1];
 
-            out.writeUTF(type.typeToString());
-            out.writeUTF(name);
-            out.writeUTF(pass);
-            out.flush();
-            if (in.readUTF().equals(errorMsg)) {
-                System.out.println(errorMsg);
-                continue;
+        socketLock.lock();
+        out.writeUTF(type.typeToString());
+        out.writeUTF(name);
+        out.writeUTF(pass);
+        out.flush();
+        socketLock.unlock();
+
+        if (!in.readUTF().equals("0")) {
+            switch (type) {
+                case MessageTypes.REGISTER -> {
+                    System.out.println("Registo falhou. Username já existe.");
+                    return false;
+                }
+                case MessageTypes.LOGIN -> {
+                    System.out.println("Login falhou. Credenciais erradas.");
+                    return false;
+                }
             }
-            isLoggedIn = true;
         }
+        return true;
     }
 
     private static void fixResultPath(String path) {
@@ -106,99 +144,86 @@ public class Client {
             RESULT_PATH = RESULT_PATH.concat("/");
     }
 
-    private static boolean isDigit(String input) {
-        if (input == null || input.isBlank() || input.isEmpty())
-            return false;
-        for (char c : input.toCharArray()) {
-            if (!Character.isDigit(c))
-                return false;
-        }
-        return true;
-    }
 
     private static void disconnect(Socket socket) throws IOException {
         socket.shutdownOutput();
         socket.shutdownInput();
         socket.close();
-        System.out.println("Disconectado.");
+        System.out.println("Desconectado.");
     }
 
-    private static void sendTask(String mem, String task, String path){
-        new Task(path, Integer.parseInt(mem), task.getBytes()).serialize(out);
-    }
-
-    private static String readMemory() throws IOException
-    {
-        String mem;
-        while(true) {
-            System.out.println("Quanta memória vai precisar?:");
-            mem = sysIn.readLine();
-            if (isDigit(mem))
-                break;
-            System.out.println("Insira um valor válido.");
-        }
-        return mem;
-    }
-
-    private static void askStatus() throws IOException
-    {
-        new Status().serialize(out);
-    }
-
-    private static File readFile() throws IOException
-    {
-        String path;
-        File file;
-        while(true) {
-            System.out.println("Insira o caminho para o ficheiro com a tarefa:");
-            path = sysIn.readLine();
+    private static void sendTask(List<String[]> taskInfo) {
+        for (String[] values : taskInfo) {
+            String taskName = values[0];
+            int mem = Integer.parseInt(values[1]);
+            byte[] job = values[2].getBytes();
+            Task task = new Task(taskName, mem, job);
             try {
-                file = new File(path);
-                break;
-            } catch (Exception e) {
-                System.out.println("Exception a ler ficheiro: " + e);
+                socketLock.lock();
+                task.serialize(out);
+            } catch (IOException e) {
+                System.out.println("ERRO: " + e);
+            } finally {
+                socketLock.unlock();
             }
         }
-        return file;
     }
 
-    private static String getTaskFromFile(File file) throws FileNotFoundException
+    private static void askStatus()
     {
-        Scanner scanner = new Scanner(file);
-        return scanner.nextLine();
+        Status status = new Status();
+        try {
+            socketLock.lock();
+            status.serialize(out);
+        } catch (IOException e) {
+            System.out.println("ERRO: " + e);
+        } finally {
+            socketLock.unlock();
+        }
     }
 
-    private static void createListeningThread()
+    private static List<String[]> parseTaskInfo(String filePath) throws FileNotFoundException {
+        List<String[]> tasks = new ArrayList<>();
+
+        try(Scanner scanner = new Scanner(new File(filePath))) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                String[] values = line.split(";");
+                tasks.add(values);
+            }
+        }
+        return tasks;
+    }
+
+    private static void createListeningThread ()
     {
         new Thread(() ->
         {
-            while(true )
+            while(!exit)
             {
                 try{
                     String message = in.readUTF();
                     switch(MessageTypes.stringToType(message))
                     {
                         case STATUS:
-                            Status s = Status.deserialize(in);
-                            s.printStatus();
+                            serverStatusLock.lock();
+                            serverStatus = Status.deserialize(in);
+                            updateStatus.signal();
+                            serverStatusLock.unlock();
                             break;
                         case TASK_SUCCESSFUL:
-                            Task ts = Task.deserialize(in, MessageTypes.TASK_SUCCESSFUL);
-                            ts.writeResultToFile(RESULT_PATH);
+                            Task ts = Task.deserializeFromServer(in, MessageTypes.TASK_SUCCESSFUL);
+                            ts.writeResultToFile(RESULT_PATH, MessageTypes.TASK_SUCCESSFUL);
                             break;
                         case TASK_FAILED:
-                            Task tf = Task.deserialize(in, MessageTypes.TASK_FAILED);
-                            tf.printError();
+                            Task tf = Task.deserializeFromServer(in, MessageTypes.TASK_FAILED);
+                            tf.writeResultToFile(RESULT_PATH, MessageTypes.TASK_FAILED);
                             break;
                     }
-                }
-                catch(IOException e)
-                {
-                    if(hasDisconnected)
-                        System.exit(0);
-                    System.out.println("Erro a ler mensagem do servidor: " + e);
+                } catch (IOException e) {
+                    exit = true;
                 }
             }
-        }).start();
+        }, "ListeningThread").start();
     }
 }

@@ -3,49 +3,60 @@ package src;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Status {
-    private final int mem;
-    private final int nQueue;
+    private final int queueSize;
+    private final List<String> workersInfo;
 
-    public Status(int mem, int nQueue)
+    public Status(int queueSize, List<String> workersInfo)
     {
-        this.mem = mem;
-        this.nQueue = nQueue;
+        this.queueSize = queueSize;
+        this.workersInfo = workersInfo;
     }
 
     public Status() {
-        this.mem = -1;
-        this.nQueue = -1;
+        this.queueSize = -1;
+        this.workersInfo = null;
     }
 
     public void serialize(DataOutputStream out) throws IOException
     {
         out.writeUTF(MessageTypes.STATUS.typeToString());
-        if(this.mem != -1 && this.nQueue != -1)
+        if(this.queueSize != -1 && this.workersInfo != null)
         {
-            out.writeInt(this.mem);
-            out.writeInt(this.nQueue);
+            out.writeInt(this.queueSize);
+            out.writeInt(workersInfo.size());
+            for (String workerInfo : workersInfo)
+                out.writeUTF(workerInfo);
         }
+        out.flush();
     }
 
     public static Status deserialize(DataInputStream in)
     {
-        int mem = 0;
-        int nQueue = 0;
+        int queueSize = 0;
+        List<String> workersInfo = new ArrayList<>();
         try{
-            mem = in.readInt();
-            nQueue = in.readInt();
+            queueSize = in.readInt();
+            int num = in.readInt();
+            for (int i = 0; i <num; i++) {
+               String info = in.readUTF();
+               workersInfo.add(info);
+            }
         }
         catch (IOException e)
         {
             System.out.println("Erro a ler status do servidor: " + e);
         }
-        return new Status(mem, nQueue);
+        return new Status(queueSize, workersInfo);
     }
 
-    public void printStatus()
-    {
-        System.out.println("Memória disponível: " + mem + "\nTarefas pendentes: " + nQueue);
+    public int getQueueSize() {
+        return this.queueSize;
+    }
+    public List<String> getWorkersInfo() {
+        return this.workersInfo;
     }
 }

@@ -1,30 +1,62 @@
 package src;
 
-import java.net.Socket;
+import java.io.DataOutputStream;
+import java.util.LinkedList;
 import java.util.Queue;
-import java.util.concurrent.locks.Condition;
 
 public class WorkerInfo {
     private final int memory;
-    private final Socket socket;
+    private int availableMemory;
+    private final DataOutputStream out;
     private final Queue<Task> queue;
-    private Condition cond;
 
-    public WorkerInfo(int memory, Socket socket, Queue<Task> queue, Condition cond) {
+    public WorkerInfo(int memory, DataOutputStream out, Queue<Task> queue) {
         this.memory = memory;
-        this.socket = socket;
+        this.availableMemory = memory;
+        this.out = out;
         this.queue = queue;
-        this.cond = cond;
     }
 
     public int getMemory() {
         return memory;
     }
-    public Socket getSocket() {
-        return socket;
+    public DataOutputStream getOut() {
+        return out;
+    }
+
+    public void addTasktoQueue(Task task) {
+        this.queue.add(task);
+    }
+    public void removeTaskFromQueue(String taskId) {
+        Queue<Task> tempQueue = new LinkedList<>();
+
+        for (Task currentTask : this.queue) {
+            if(!currentTask.getTaskId().equals(taskId)) {
+                tempQueue.add(currentTask);
+            }
+        }
+
+        this.queue.clear();
+        this.queue.addAll(tempQueue);
+    }
+    public int getAvailableMemory() {
+        return availableMemory;
+    }
+    public void useMemory(int mem) {
+        this.availableMemory -= mem;
+    }
+    public void freeMemory(int mem) {
+        this.availableMemory += mem;
+    }
+    public int getTaskMem(String taskId) {
+        for (Task currentTask : this.queue) {
+            if (currentTask.getTaskId().equals(taskId)) {
+                return currentTask.getMem();
+            }
+        }
+        return 0;
     }
     public Queue<Task> getQueue() {
-        return queue;
+        return this.queue;
     }
-    public Condition getCondition() { return cond; }
 }

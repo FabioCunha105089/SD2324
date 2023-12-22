@@ -2,9 +2,7 @@ package src;
 
 import java.io.*;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -18,6 +16,11 @@ public abstract class ClientLib {
     private static Status serverStatus = null;
     private static final ReentrantLock serverStatusLock = new ReentrantLock();
     private static final Condition updateStatus = serverStatusLock.newCondition();
+    private static boolean waitingForReply = false;
+    private static final ReentrantLock waitingForReplyLock = new ReentrantLock();
+    private static final Condition newMessageSent = waitingForReplyLock.newCondition();
+    private static int tasksRequested = 0;
+    private static final ReentrantLock tasksRequestedLock = new ReentrantLock();
 
     private ClientLib() {
     }
@@ -161,6 +164,7 @@ public abstract class ClientLib {
             } finally {
                 socketLock.unlock();
             }
+            updateTasksRequested(MessageTypes.TASK_REQUEST);
         }
     }
 
@@ -170,6 +174,12 @@ public abstract class ClientLib {
         try {
             socketLock.lock();
             status.serialize(out);
+            waitingForReplyLock.lock();
+            if (!waitingForReply) {
+                waitingForReply = true;
+                newMessageSent.signal();
+            }
+            waitingForReplyLock.unlock();
         } catch (IOException e) {
             System.out.println("ERRO: " + e);
         } finally {
@@ -197,28 +207,62 @@ public abstract class ClientLib {
             while(!exit)
             {
                 try{
+                    waitingForReplyLock.lock();
+                    if (!waitingForReply) {
+                        newMessageSent.await();
+                    }
+                    waitingForReplyLock.unlock();
+
                     String message = in.readUTF();
-                    switch(MessageTypes.stringToType(message))
+                    MessageTypes type = MessageTypes.stringToType(message);
+                    switch(type)
                     {
                         case STATUS:
                             serverStatusLock.lock();
                             serverStatus = Status.deserialize(in);
                             updateStatus.signal();
                             serverStatusLock.unlock();
+                            updateTasksRequested(type);
                             break;
                         case TASK_SUCCESSFUL:
                             Task ts = Task.deserializeFromServer(in, MessageTypes.TASK_SUCCESSFUL);
                             ts.writeResultToFile(RESULT_PATH, MessageTypes.TASK_SUCCESSFUL);
+                            updateTasksRequested(type);
                             break;
                         case TASK_FAILED:
                             Task tf = Task.deserializeFromServer(in, MessageTypes.TASK_FAILED);
                             tf.writeResultToFile(RESULT_PATH, MessageTypes.TASK_FAILED);
+                            updateTasksRequested(type);
                             break;
                     }
                 } catch (IOException e) {
                     exit = true;
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
                 }
             }
         }, "ListeningThread").start();
+    }
+
+    private static void updateTasksRequested(MessageTypes type) {
+        tasksRequestedLock.lock();
+        if (type.equals(MessageTypes.TASK_REQUEST)) {
+            tasksRequested++;
+            waitingForReplyLock.lock();
+            if (!waitingForReply)
+                waitingForReply = true;
+            newMessageSent.signal();
+            waitingForReplyLock.unlock();
+        }else {
+            if (!type.equals(MessageTypes.STATUS))
+                tasksRequested--;
+
+            if (tasksRequested == 0) {
+                waitingForReplyLock.lock();
+                waitingForReply = false;
+                waitingForReplyLock.unlock();
+            }
+        }
+        tasksRequestedLock.unlock();
     }
 }

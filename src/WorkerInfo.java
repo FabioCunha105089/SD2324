@@ -1,16 +1,15 @@
 package src;
 
 import java.io.DataOutputStream;
-import java.util.LinkedList;
-import java.util.Queue;
+import java.util.Map;
 
 public class WorkerInfo {
     private final int memory;
     private int availableMemory;
     private final DataOutputStream out;
-    private final Queue<Task> queue;
+    private final Map<String, Task> queue;
 
-    public WorkerInfo(int memory, DataOutputStream out, Queue<Task> queue) {
+    public WorkerInfo(int memory, DataOutputStream out, Map<String, Task> queue) {
         this.memory = memory;
         this.availableMemory = memory;
         this.out = out;
@@ -24,20 +23,11 @@ public class WorkerInfo {
         return out;
     }
 
-    public void addTasktoQueue(Task task) {
-        this.queue.add(task);
+    public void addTasktoQueue(String taskId, Task task) {
+        this.queue.put(taskId, task);
     }
     public void removeTaskFromQueue(String taskId) {
-        Queue<Task> tempQueue = new LinkedList<>();
-
-        for (Task currentTask : this.queue) {
-            if(!currentTask.getTaskId().equals(taskId)) {
-                tempQueue.add(currentTask);
-            }
-        }
-
-        this.queue.clear();
-        this.queue.addAll(tempQueue);
+        this.queue.remove(taskId);
     }
     public int getAvailableMemory() {
         return availableMemory;
@@ -49,14 +39,11 @@ public class WorkerInfo {
         this.availableMemory += mem;
     }
     public int getTaskMem(String taskId) {
-        for (Task currentTask : this.queue) {
-            if (currentTask.getTaskId().equals(taskId)) {
-                return currentTask.getMem();
-            }
-        }
+        if (this.queue.containsKey(taskId))
+            return this.queue.get(taskId).getMem();
         return 0;
     }
-    public Queue<Task> getQueue() {
+    public Map<String, Task> getQueue() {
         return this.queue;
     }
 }

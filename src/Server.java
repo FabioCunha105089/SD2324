@@ -9,6 +9,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 
+@SuppressWarnings("RedundantCollectionOperation")
 public class Server {
     private static final int PORT = 9090;
     private static final Map<String, String> users = new HashMap<>();
@@ -20,6 +21,9 @@ public class Server {
     private static final Queue<Task> taskQueue = new ArrayDeque<>();
     private static final ReentrantLock taskQueueLock = new ReentrantLock();
     private static final Condition queueNotEmpty = taskQueueLock.newCondition();
+    private static final Map<String, Boolean> workersBusy = new HashMap<>();
+    private static final ReentrantLock workersBusyLock = new ReentrantLock();
+    private static final Condition newTaskAdded = workersBusyLock.newCondition();
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
@@ -65,8 +69,9 @@ public class Server {
                         boolean processed = false;
                         while (!processed) {
                             workersLock.lock();
-                            WorkerInfo worker = getWorkerWithMostMemory();
-                            if (worker.getAvailableMemory() < task.getMem()) {
+                            String worker = getWorkerWithMostMemory();
+                            WorkerInfo workerInfo = workers.get(worker);
+                            if (workerInfo.getAvailableMemory() < task.getMem()) {
                                 taskQueueLock.lock();
                                 //Envia a próxima task na queue caso haja memória suficiente. Depois espera até ter
                                 // haver memória para a primeira. Só vê a próxima para evitar que a primeira fique à
@@ -74,10 +79,10 @@ public class Server {
                                 if (!taskQueue.isEmpty()) {
                                     Task nextTask = taskQueue.peek();
                                     clientsLock.lock();
-                                    if(clients.containsKey(task.getClient()) && nextTask.getMem() <= worker.getAvailableMemory()) {
+                                    if(clients.containsKey(task.getClient()) && nextTask.getMem() <= workerInfo.getAvailableMemory()) {
                                         clientsLock.unlock();
                                         nextTask = taskQueue.poll();
-                                        processTask(worker, nextTask);
+                                        processTask(worker, workerInfo, nextTask);
                                     }else {
                                         clientsLock.unlock();
                                     }
@@ -86,7 +91,7 @@ public class Server {
                                 memoryFreed.await();
                                 workersLock.unlock();
                             } else {
-                                processTask(worker, task);
+                                processTask(worker, workerInfo, task);
                                 workersLock.unlock();
                                 processed = true;
                             }
@@ -103,10 +108,16 @@ public class Server {
         }, "TaskDistributionThread").start();
     }
 
-    private static void processTask(WorkerInfo worker, Task task) throws IOException {
-        worker.addTasktoQueue(task);
-        worker.useMemory(task.getMem());
-        task.serializeToWorker(worker.getOut());
+    private static void processTask(String worker, WorkerInfo workerInfo, Task task) throws IOException {
+        workerInfo.addTasktoQueue(task.getTaskId(), task);
+        workerInfo.useMemory(task.getMem());
+        workersBusyLock.lock();
+        if (workersBusy.containsKey(worker) && !workersBusy.get(worker)) {
+            workersBusy.put(worker, true);
+            newTaskAdded.signal();
+        }
+        workersBusyLock.unlock();
+        task.serializeToWorker(workerInfo.getOut());
     }
 
     private static void handleLogin(DataInputStream in, DataOutputStream out) throws IOException {
@@ -219,13 +230,14 @@ public class Server {
         return new Status(queueSize, workersInfo);
     }
 
-    public static WorkerInfo getWorkerWithMostMemory() {
+    public static String getWorkerWithMostMemory() {
         int maxMemory = Integer.MIN_VALUE;
-        WorkerInfo maxMemoryWorker = null;
+        String maxMemoryWorker = null;
         for (Map.Entry<String, WorkerInfo> entry : workers.entrySet()) {
-            WorkerInfo worker = entry.getValue();
+            String worker = entry.getKey();
+            WorkerInfo workerInfo = entry.getValue();
 
-            int availableMemory = worker.getAvailableMemory();
+            int availableMemory = workerInfo.getAvailableMemory();
             if (availableMemory > maxMemory) {
                 maxMemory = availableMemory;
                 maxMemoryWorker = worker;
@@ -239,7 +251,7 @@ public class Server {
         new Thread(() -> {
             int memory = 0;
             String worker = "";
-            Queue<Task> queue = new ArrayDeque<>();
+            Map<String, Task> queue = new HashMap<>();
             try {
                 var workerIP = workerSocket.getInetAddress();
                 var workerPort = workerSocket.getPort();
@@ -248,14 +260,26 @@ public class Server {
             } catch (IOException e) {
                 System.out.println("Erro a ler memória do worker: " + e);
             }
-            if (!workers.containsKey(worker)) {
-                workers.put(worker, new WorkerInfo(memory, out, queue));
-            } else {
-                System.out.println("Erro ao inserir");
-            }
+            workersLock.lock();
+            if (workers.containsKey(worker))
+                workers.remove(worker);
+
+            workers.put(worker, new WorkerInfo(memory, out, queue));
+            workersLock.unlock();
+
+            workersBusyLock.lock();
+            if (workersBusy.containsKey(worker))
+                workersBusy.remove(worker);
+            workersBusy.put(worker, false);
+            workersBusyLock.unlock();
 
             try {
                 while (true) {
+                    workersBusyLock.lock();
+                    if (!workersBusy.get(worker))
+                        newTaskAdded.await();
+                    workersBusyLock.unlock();
+
                     String messageType = in.readUTF();
                     MessageTypes type = MessageTypes.stringToType(messageType);
 
@@ -277,7 +301,7 @@ public class Server {
                     workerSocket.close();
                     workersLock.lock();
                     taskQueueLock.lock();
-                    taskQueue.addAll(workers.get(worker).getQueue());
+                    taskQueue.addAll(workers.get(worker).getQueue().values());
                     taskQueueLock.unlock();
                     workers.remove(worker);
                     workersLock.unlock();
@@ -285,6 +309,8 @@ public class Server {
                 } catch (IOException ex) {
                     throw new RuntimeException(ex);
                 }
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
         }, "WorkerThread").start();
     }
@@ -295,6 +321,11 @@ public class Server {
         int tsMem = workerInfo.getTaskMem(taskId);
         workerInfo.freeMemory(tsMem);
         workerInfo.removeTaskFromQueue(taskId);
+        if (workerInfo.getQueue().isEmpty()) {
+            workersBusyLock.lock();
+            workersBusy.put(worker, false);
+            workersBusyLock.unlock();
+        }
         memoryFreed.signal();
         workersLock.unlock();
     }

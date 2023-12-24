@@ -117,14 +117,12 @@ public abstract class ClientLib {
 
             if (!in.readUTF().equals("0")) {
                 switch (type) {
-                    case MessageTypes.REGISTER -> {
+                    case MessageTypes.REGISTER:
                         System.out.println("Registo falhou. Username já existe.");
                         return false;
-                    }
-                    case MessageTypes.LOGIN -> {
+                    case MessageTypes.LOGIN:
                         System.out.println("Login falhou. Credenciais erradas.");
                         return false;
-                    }
                 }
             }
             return true;

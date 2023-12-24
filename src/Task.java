@@ -69,7 +69,7 @@ public class Task {
     }
 
     public void serializeToClient(DataOutputStream out, MessageTypes type) throws IOException {
-        if (type == MessageTypes.TASK_FAILED)
+        if (type.equals(MessageTypes.TASK_FAILED))
             serialize_failure(out, type);
         else
             serialize_success(out, type);
@@ -92,7 +92,7 @@ public class Task {
     }
 
     public static Task deserializeFromServer(DataInputStream in, MessageTypes type) throws IOException {
-        if (type == MessageTypes.TASK_FAILED)
+        if (type.equals(MessageTypes.TASK_FAILED))
             return deserializeFromServerFailure(in);
         else
             return deserializeFromServerSuccess(in);
@@ -115,7 +115,7 @@ public class Task {
     }
 
     public static Task deserialize(DataInputStream in, MessageTypes type) {
-        if (type == MessageTypes.TASK_FAILED)
+        if (type.equals(MessageTypes.TASK_FAILED))
             return deserialize_failure(in);
         else
             return deserialize_success(in);
@@ -187,6 +187,8 @@ public class Task {
     {
         try {
             String path = this.taskId.concat("_Result.gz");
+            if(type.equals(MessageTypes.TASK_FAILED))
+                path = this.taskId.concat("_Result.txt");
             File file = new File(resultPath.concat(path));
                 try (FileOutputStream writer = new FileOutputStream(file, false)) {
                     if (type.equals(MessageTypes.TASK_SUCCESSFUL)) {

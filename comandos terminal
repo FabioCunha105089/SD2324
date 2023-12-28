@@ -1,0 +1,9 @@
+Server:
+/home/fabiocunha/.jdks/openjdk-21/bin/java -javaagent:/snap/intellij-idea-community/475/lib/idea_rt.jar=37171:/snap/intellij-idea-community/475/bin -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -classpath /home/fabiocunha/SD2324/out/production/SD2324:/home/fabiocunha/SD2324/sd23.jar src.Server
+
+Worker:
+/home/fabiocunha/.jdks/openjdk-21/bin/java -javaagent:/snap/intellij-idea-community/475/lib/idea_rt.jar=34469:/snap/intellij-idea-community/475/bin -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -classpath /home/fabiocunha/SD2324/out/production/SD2324:/home/fabiocunha/SD2324/sd23.jar src.Worker 100
+
+ClientGUI:
+/home/fabiocunha/.jdks/openjdk-21/bin/java -javaagent:/snap/intellij-idea-community/475/lib/idea_rt.jar=40219:/snap/intellij-idea-community/475/bin -Dfile.encoding=UTF-8 -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -classpath /home/fabiocunha/SD2324/out/production/SD2324:/home/fabiocunha/SD2324/sd23.jar src.ClientGUI resultados1
+

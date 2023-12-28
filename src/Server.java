@@ -217,7 +217,7 @@ public class Server {
         workersLock.lock();
         for (WorkerInfo workerInfo : workers.values()) {
 
-            int totalMemory = workerInfo.getMemory();
+            int totalMemory = workerInfo.getTotalMemory();
             int availableMemory = workerInfo.getAvailableMemory();
 
             int workerLoad = (int) (((double) (totalMemory - availableMemory) / totalMemory) * 100);
@@ -231,19 +231,23 @@ public class Server {
     }
 
     public static String getWorkerWithMostMemory() {
-        int maxMemory = Integer.MIN_VALUE;
-        String maxMemoryWorker = null;
+        double mostMemoryPercentage = Double.MIN_VALUE;
+        String mostMemoryPercentageWorker = null;
+
         for (Map.Entry<String, WorkerInfo> entry : workers.entrySet()) {
             String worker = entry.getKey();
             WorkerInfo workerInfo = entry.getValue();
 
+            int totalMemory = workerInfo.getTotalMemory();
             int availableMemory = workerInfo.getAvailableMemory();
-            if (availableMemory > maxMemory) {
-                maxMemory = availableMemory;
-                maxMemoryWorker = worker;
+            double memoryPercentage = (double) availableMemory / totalMemory * 100;
+
+            if (memoryPercentage > mostMemoryPercentage) {
+                mostMemoryPercentage = memoryPercentage;
+                mostMemoryPercentageWorker = worker;
             }
         }
-        return maxMemoryWorker;
+        return mostMemoryPercentageWorker;
     }
 
     private static void workerThread(Socket workerSocket, DataInputStream in, DataOutputStream out)

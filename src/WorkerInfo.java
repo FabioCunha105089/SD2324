@@ -4,23 +4,23 @@ import java.io.DataOutputStream;
 import java.util.Map;
 
 public class WorkerInfo {
-    private final int memory;
+    private final int totalMemory;
     private int availableMemory;
     private final DataOutputStream out;
     private final Map<String, Task> queue;
 
     public WorkerInfo(int memory, DataOutputStream out, Map<String, Task> queue) {
-        this.memory = memory;
+        this.totalMemory = memory;
         this.availableMemory = memory;
         this.out = out;
         this.queue = queue;
     }
 
-    public int getMemory() {
-        return memory;
+    public int getTotalMemory() {
+        return this.totalMemory;
     }
     public DataOutputStream getOut() {
-        return out;
+        return this.out;
     }
 
     public void addTasktoQueue(String taskId, Task task) {
@@ -30,7 +30,7 @@ public class WorkerInfo {
         this.queue.remove(taskId);
     }
     public int getAvailableMemory() {
-        return availableMemory;
+        return this.availableMemory;
     }
     public void useMemory(int mem) {
         this.availableMemory -= mem;

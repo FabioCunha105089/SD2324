@@ -162,6 +162,7 @@ public class Server {
             InetAddress clientAddress = clientSocket.getInetAddress();
             int clientPort = clientSocket.getPort();
             var cliente = clientAddress + ":" + clientPort;
+            System.out.println("Cliente conetado: " + cliente);
             ReentrantLock socketLock = new ReentrantLock();
             clientsLock.lock();
             clients.put(cliente, new ClientInfo(out, socketLock));
@@ -200,7 +201,7 @@ public class Server {
                     clientsLock.lock();
                     clients.remove(cliente);
                     clientsLock.unlock();
-                    System.out.println("Cliente desconetado");
+                    System.out.println("Cliente desconetado: " + cliente);
                 } catch (IOException ex) {
                     throw new RuntimeException(ex);
                 }
@@ -260,6 +261,7 @@ public class Server {
                 var workerIP = workerSocket.getInetAddress();
                 var workerPort = workerSocket.getPort();
                 worker = workerIP + ":" + workerPort;
+                System.out.println("Worker conetado: " + worker);
                 memory = in.readInt();
             } catch (IOException e) {
                 System.out.println("Erro a ler memória do worker: " + e);
@@ -309,7 +311,7 @@ public class Server {
                     taskQueueLock.unlock();
                     workers.remove(worker);
                     workersLock.unlock();
-                    System.out.println("Worker desconetado.");
+                    System.out.println("Worker desconetado: " + worker);
                 } catch (IOException ex) {
                     throw new RuntimeException(ex);
                 }
